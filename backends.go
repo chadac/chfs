@@ -1,10 +1,12 @@
-package backends
+package main
 
 import (
-	"github.com/chadac/vfs/lib"
+	// "errors"
 )
 
 type backend interface {
-	put(key checksum, value []byte) bool
-	get(key checksum) []byte
+	put(value []byte) (checksum, error)
+	puts(value [][]byte) ([]checksum, error)
+	get(key checksum) ([]byte, error)
+	gets(keys []checksum) ([][]byte, error)
 }
