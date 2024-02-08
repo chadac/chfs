@@ -9,19 +9,6 @@ import (
 	"crypto/sha256"
 )
 
-const chkSize = sha256.Size
-type checksum [chkSize]byte
-var rootKey = [chkSize]byte{0}
-
-func computeChecksum(data []byte) checksum {
-	return checksum{}
-}
-
-// base of the encoding (i.e. base 16 by default)
-const baseSize = 16
-const branchSize = chkSize * baseSize;
-
-type branch [baseSize]ref
 type file []byte
 type link struct {
 	id checksum
@@ -29,23 +16,11 @@ type link struct {
 	directory bool
 }
 
-type ref struct {
-	kind byte
-	id checksum
-}
-
 type registry struct {
 	backend backend
 }
 
 type name [baseSize]byte;
-
-func (b *branch) get(key byte) (ref, error) {
-	if key > baseSize {
-		return ref{}, fmt.Errorf("index '%+v' out of range", key)
-	}
-	return b[key], nil
-}
 
 func (r *registry) branch(id checksum) (branch, error) {
 	var data, err = r.backend.get(id)
