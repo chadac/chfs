@@ -1,12 +1,12 @@
-package main
+package vfs
 
 import (
 	// "errors"
 )
 
-type backend interface {
-	put(value []byte) (checksum, error)
-	puts(value [][]byte) ([]checksum, error)
-	get(key checksum) ([]byte, error)
-	gets(keys []checksum) ([][]byte, error)
+type Backend interface {
+	Put(value []byte) (id, error)
+	Puts(value [][]byte) ([]id, error)
+	Get(key id) ([]byte, error)
+	Gets(keys []id) ([][]byte, error)
 }

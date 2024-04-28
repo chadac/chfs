@@ -1,138 +1,166 @@
-package main
+package vfs
 
 import (
-	// "errors"
 	"fmt"
-	// "io"
-	// "net/http"
-	// "os"
-	"crypto/sha256"
+	"sync"
 )
 
-type file []byte
-type link struct {
-	id checksum
-	next checksum
-	directory bool
+type Registry struct {
+	Backend *Backend
+	writeCount uint64
+	writes sync.Map
+	writeMu sync.Mutex
 }
 
-type registry struct {
-	backend backend
+type FileNotFoundError struct {
+	// used internally to determine if the branch conflicts
+	isBranchConflict bool
+}
+func (e FileNotFoundError) Error() string {
+	return "file not found"
 }
 
-type name [baseSize]byte;
-
-func (r *registry) branch(id checksum) (branch, error) {
-	var data, err = r.backend.get(id)
-	if err != nil {
-		return branch{}, err
-	}
-	if len(data) != baseSize * (chkSize + 1) {
-		return branch{}, fmt.Errorf("branch '%+v' has invalid size", id)
-	}
-	var refs [baseSize]ref
-	for i := 0; i < baseSize; i++ {
-		var offset = i * (chkSize + 1)
-		refs[i] = ref{data[offset], (checksum)(data[offset+1:offset+chkSize+1])}
-	}
-	return refs, nil
+func New(backend *Backend) *Registry {
+	r := new(Registry)
+	r.Backend = backend
+	return r
 }
 
-func (r *registry) file(id checksum) (file, error) {
-	return r.backend.get(id)
+func (r *Registry) branch(id *id) (*branch, error) {
+	return nil, nil
+	// var data, err = r.backend.get(id)
+	// if err != nil {
+	// 	return branch{}, err
+	// }
+	// if len(data) != baseSize * (chkSize + 1) {
+	// 	return branch{}, fmt.Errorf("branch '%+v' has invalid size", id)
+	// }
+	// var refs [baseSize]ref
+	// for i := 0; i < baseSize; i++ {
+	// 	var offset = i * (chkSize + 1)
+	// 	refs[i] = ref{data[offset], (checksum)(data[offset+1:offset+chkSize+1])}
+	// }
+	// return refs, nil
 }
 
-func (r *registry) link(id checksum) (link, error) {
-	data, err := r.backend.get(id)
-	if err != nil {
-		return link{}, err
-	}
-	if len(data) != 2 * chkSize {
-		return link{}, fmt.Errorf("directory '%+v' has invalid size", id)
-	}
-	return link{(checksum)(data[0:chkSize]), (checksum)(data[chkSize:2*chkSize])}, nil
+func (r *Registry) file(id *id) (*file, error) {
+	return nil, nil
+	// return r.backend.get(id)
 }
 
-func (r *registry) root() (checksum, error) {
-	d, err := r.backend.get(rootKey)
-	if err != nil {
-		return checksum{}, err
-	}
-	return (checksum)(d), nil
-}
-
-type branchRef struct {
-	id checksum
-	c byte
-	value branch
-}
-
-func (r *registry) path(root checksum, path []name) (checksum, []branchRef, error) {
-	p := []branchRef{}
-	curr := root
-	for idx, n := range path {
-		for _, k := range n {
-			b, err := r.branch(curr.id)
-			if err != nil {
-				return checksum{}, p, err
-			}
-			p = append(p, branchRef{curr, b})
-			curr, err = b.get(k)
-			if err != nil {
-				return checksum{}, p, err
-			}
-			if curr.kind == dirType {
-				break
-			} else if curr.kind == fileType {
-				if idx == len(path)-1 {
-					return curr.id, p, nil
-				} else {
-					return checksum{}, p, fmt.Errorf("attempted to read file as directory")
-				}
-			} else if curr.kind != branchType {
-				return checksum{}, p, fmt.Errorf("unexpected ref type '%+v'", curr.kind)
-			}
-		}
-	}
-	return checksum{}, p, fmt.Errorf("attempted to fetch node from directory")
-}
-
-func (r *registry) get(root checksum, path []name) (file, error) {
-	id, _, err := r.path(root, path)
+// returns the ID of the root node
+// interestingly, this is stored in the registry as a file. weird, eh?
+func (r *Registry) root() (*id, error) {
+	root, err := r.file(&rootKey)
 	if err != nil {
 		return nil, err
+	}
+	return root.hash, nil
+}
+
+func (r *Registry) dirRoute(root *id, dir *directory) (routeComponent, error) {
+	curr := root
+	ret := routeComponent{[]*id{root}, nil}
+	for _, char := range dir.x {
+		b, err := r.branch(curr)
+		if err != nil {
+			return ret, err
+		}
+		next, err := b.get(char)
+		if err != nil {
+			return ret, err
+		}
+		if next.name != nil {
+			if next.name == dir.name {
+				ret.next = next.ref
+				break
+			} else {
+				return ret, FileNotFoundError{true}
+			}
+		}
+		if next.ref == nil {
+			return ret, FileNotFoundError{false}
+		}
+		ret.subpath = append(ret.subpath, next.ref)
+		curr = next.ref
+	}
+	return ret, nil
+}
+
+func (r *Registry) route(root *id, p *path) (route, error) {
+	curr := root
+	ret := route{}
+	for _, dir := range *p {
+		routePart, err := r.dirRoute(curr, &dir)
+		ret = append(ret, routePart)
+		if err != nil {
+			return ret, err
+		}
+		curr = routePart.next
+	}
+	return ret, nil
+}
+
+func (r *Registry) get(root *id, path *path) (*file, error) {
+	rt, err := r.route(root, path)
+	if err != nil {
+		return nil, err
+	}
+	id := rt.file()
+	if id == nil {
+		return nil, fmt.Errorf("path does not return a valid file")
 	}
 	return r.file(id)
 }
 
-// update the registry with the given data at the given key
-func (r *registry) set(root checksum, path []ref, data []byte) (checksum, error) {
-	// TODO: add locking mechanism for concurrency
-	p, err := r.path(id, path)
-	if err != nil {
-		return checksum{}, err
-	}
-	next, err := r.backend.put(data)
-	if err != nil {
+func (r *Registry) del(root *id, path *path) error {
+	return nil
+}
+
+func (r *Registry) set(root *id, path *path, file *file) (*id, error) {
+	rt, err := r.route(root, path)
+	if fnf, ok := err.(FileNotFoundError); ok {
+		// create the file
+		if fnf.isBranchConflict {
+			// this means that we reached a split... so we gotta create a
+			// new branch with the proper split
+		} else {
+		}
+	} else if err != nil {
 		return nil, err
 	}
-	for i := len(p)-2; i >= 0; i-- {
-		b := r.branch(p[i])
-	}
-	return checksum{}, nil
-}
-
-func (r *registry) bulkGet(root checksum, path []ref) ([]checksum, error) {
+	// incrementally replace the file
 	return nil, nil
 }
 
-func (r *registry) bulkSet(root checksum, path []ref, data []byte) (checksum, error) {
-	return checksum{}, nil
-}
+// // update the registry with the given data at the given key
+// func (r *Registry) set(root *id, path []ref, data []byte) (checksum, error) {
+// 	// TODO: add locking mechanism for concurrency
+// 	p, err := r.path(id, path)
+// 	if err != nil {
+// 		return checksum{}, err
+// 	}
+// 	next, err := r.backend.put(data)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	for i := len(p)-2; i >= 0; i-- {
+// 		b := r.branch(p[i])
+// 	}
+// 	return checksum{}, nil
+// }
 
-func (r *registry) list(root checksum, prefix []ref) ([]*node, error) {
-	return nil, nil
-}
+// func (r *Registry) bulkGet(root checksum, path []ref) ([]checksum, error) {
+// 	return nil, nil
+// }
 
-func main() {
-}
+// func (r *Registry) bulkSet(root checksum, path []ref, data []byte) (checksum, error) {
+// 	return checksum{}, nil
+// }
+
+// func (r *Registry) list(root checksum, prefix []ref) ([]*node, error) {
+// 	return nil, nil
+// }
+
+// func main() {
+// }

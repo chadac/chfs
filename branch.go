@@ -1,42 +1,62 @@
-package main
+package vfs
 
-type path []pathRef
+import (
+	"fmt"
+)
 
-type pathRef struct {
-	root *id
-	subpath []*id
-	next *id
+const charSize = 16
+
+type path []directory
+type directory struct {
+	name *string
+	x []uint8
+}
+type branch [charSize+1]branchNode
+type branchNode struct {
+	name *string
+	ref *id
 }
 
-type branch [baseSize]branchRef
-
-type interface branchRef {
-	name() *checksum
-	next() *id
+func pathEncode(pathName string) path {
+	return path{}
 }
 
-type bBranch {
-	next *id
+func directoryEncode(dirName string) directory {
+	return directory{}
 }
 
-type bLink {
-	id *checksum
-	next *checksum
+func initBranch() *branch {
+	b := new(branch)
+	var i uint8 = 0
+	for ; i <= charSize; i++ {
+		b[i] = branchNode{nil, nil}
+	}
+	return b
 }
 
-func (b *branch) get(key byte) (*branchRef, error) {
-	if key > baseSize {
+func (b *branch) get(key uint8) (*branchNode, error) {
+	if key > charSize {
 		return nil, fmt.Errorf("index '%+v' out of range", key)
 	}
-	return b[key], nil
+	return &b[key], nil
 }
 
-func (b *branch) update(key byte, newRef *branchRef) (*branch, error) {
-	newBranch := make(branch)
-	copy(newBranch, b)
-	if key > baseSize {
+func (b *branch) set(key uint8, node *branchNode) (*branch, error) {
+	if key > charSize {
 		return nil, fmt.Errorf("index '%+v' out of range", key)
 	}
-	newBranch[key] = newRef
-	return &newBranch
+	newBranch := new(branch)
+	var i uint8 = 0
+	for ; i <= charSize; i++ {
+		if i == key {
+			newBranch[i] = *node
+		} else {
+			newBranch[i] = b[i]
+		}
+	}
+	return newBranch, nil
+}
+
+func (b *branch) checksum() *id {
+	return nil
 }
