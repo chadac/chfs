@@ -9,6 +9,9 @@ import (
 // sha256 checksum
 type Checksum [32]byte
 
+const branchSize = 64;
+const nameSize = 64;
+
 func (c Checksum) repr() string {
 	s := make([]byte, 64)
 	for i := 0; i < 64; i++ {
@@ -36,19 +39,42 @@ func encodeString(contents string) Checksum {
 }
 
 type Object interface {
-	checksum() Checksum
+	checksum() *Checksum
+	file() *File
+	branch() *Branch
 }
 
-type File string
-func (f File) checksum() Checksum {
-	return encodeString((string)(f))
+type File Checksum
+func FileFromString(contents string) *File {
+	chk := encodeString(contents)
+	return (*File)(&chk)
 }
+func (f File) checksum() *Checksum {
+	return (*Checksum)(&f)
+}
+func (f File) file() *File {
+	return &f
+}
+func (f File) branch() *Branch {
+	return nil
+}
+
 type branchNode struct {
 	id Checksum
-	// if not null, points to the next directory in the chain
+	// if not null, this is a name verification mechanism
 	name *Name
+	// if true, mark as directory pointer
+	isDir bool
 }
 type Branch [16]*branchNode
+
+func EmptyBranch() *Branch {
+	b := Branch{}
+	for i := 0; i < 16; i++ {
+		b[i] = nil
+	}
+	return &b
+}
 
 func (p branchNode) repr() string {
 	var sb strings.Builder
@@ -75,44 +101,19 @@ func (b Branch) repr() string {
 	return sb.String()
 }
 
-func (b Branch) checksum() Checksum {
-	return encodeString(b.repr())
+func (b Branch) checksum() *Checksum {
+	chk := encodeString(b.repr())
+	return &chk
+}
+
+func (b Branch) file() *File {
+	return nil
+}
+
+func (b Branch) branch() *Branch {
+	return &b
 }
 
 func (b Branch) next(index byte) *branchNode {
 	return b[index]
-}
-
-type Name struct {
-	c Checksum
-	repr string
-}
-
-type Path []Name
-
-func NewPath(repr string) *Path {
-	parts := strings.Split(repr, "/")
-	p := (Path)(make([]Name, len(parts)))
-	for i, subpath := range parts {
-		p[i] = Name{}
-		p[i].repr = subpath
-		p[i].c = encodeString(repr)
-	}
-	return &p
-}
-
-func (p Path) encoded() string {
-	var sb strings.Builder
-	for _, subpath := range p {
-		sb.WriteString(subpath.c.repr())
-	}
-	return sb.String()
-}
-
-func (n Name) equals(other *Name) bool {
-	return n.c.equals(&other.c)
-}
-
-func (n Name) index(index int) byte {
-	return n.c.index(index)
 }

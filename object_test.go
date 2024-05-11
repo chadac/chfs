@@ -4,7 +4,8 @@ import (
 	"testing"
 )
 
-const sampleFile File = "{\"path\": \"https://example.org/file.txt\"}"
+const sampleFileContents string = "{\"path\": \"https://example.org/file.txt\"}"
+var sampleFile File = (File)(encodeString(sampleFileContents))
 var sampleChecksum Checksum = [32]byte{91, 113, 23, 164, 237, 163, 132, 141, 89, 166, 82, 174, 177, 20, 34, 148, 147, 28, 249, 101, 35, 138, 16, 240, 58, 53, 216, 192, 246, 4, 3, 52};
 const sampleRepr string = "5b7117a4eda3848d59a652aeb1142294931cf965238a10f03a35d8c0f6040334"
 

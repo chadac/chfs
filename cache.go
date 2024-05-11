@@ -5,7 +5,7 @@ import (
 )
 
 type WriteCache interface {
-	Id() int64
+	// Id() int64
 	Claim(path string) int64
 	Acquire(subpath string, id int64) *Branch
 	Release(subpath string, b *Branch)
