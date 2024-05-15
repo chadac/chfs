@@ -6,13 +6,15 @@ import (
 )
 
 type SimpleVFS struct {
+	root *Root
 	store Store
-	writeMutex sync.Mutex
+	writeMutex *sync.Mutex
 }
 
 func NewSimpleVFS(store Store) *SimpleVFS {
 	vfs := SimpleVFS{}
 	vfs.store = store
+	vfs.writeMutex = new(sync.Mutex)
 	return &vfs
 }
 
@@ -21,18 +23,15 @@ func (vfs SimpleVFS) Reset() (*Checksum, error) {
 }
 
 func (vfs SimpleVFS) setRoot(newRoot *Branch) (*Checksum, error) {
-	id := newRoot.checksum()
-	rootFile := (*File)(id)
-	err := vfs.store.Set(&rootKey, rootFile)
-	return &rootKey, err
+	newRootKey := newRoot.key()
+	vfs.root = newRootKey
+	// rootFile := (*File)(id)
+	// err := vfs.store.Set(&rootKey, rootFile)
+	return &newRootKey, nil
 }
 
 func (vfs SimpleVFS) RootKey() (*Checksum, error) {
-	f, err := vfs.store.File(&rootKey)
-	if err != nil {
-		return nil, err
-	}
-	return f.checksum(), nil
+	return vfs.root, nil
 }
 
 func (vfs SimpleVFS) Root() (*Branch, error) {
@@ -43,7 +42,7 @@ func (vfs SimpleVFS) Root() (*Branch, error) {
 	return vfs.store.Branch(rootBranch)
 }
 
-func (vfs SimpleVFS) Get(path *Path) (*File, error) {
+func (vfs SimpleVFS) Get(path *Path) (*Checksum, error) {
 	curr, err := vfs.RootKey()
 	if err != nil {
 		return nil, err
@@ -74,7 +73,7 @@ func (vfs SimpleVFS) Get(path *Path) (*File, error) {
 	return vfs.store.File(curr)
 }
 
-func (vfs SimpleVFS) Set(path *Path) (*Checksum, error) {
+func (vfs SimpleVFS) Write(path *Path, file *Checksum) (*Checksum, error) {
 	vfs.writeMutex.Lock()
 	for _, name := range *path {
 		for i := 0; i < nameSize; i++ {

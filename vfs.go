@@ -7,13 +7,15 @@ var rootKey = Checksum{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
 
 type VFS interface {
 	// set the vfs to an empty tree
+	Ref(name string) (*Checksum, error)
 	Reset() (*Checksum, error)
 	setRoot(newRoot *Branch) (*Checksum, error)
 	RootKey() (*Checksum, error)
 	Root() (*Branch, error)
-	Get(path *Path) (*File, error)
+	// List(path *Path, recursive bool)
+	Read(path *Path) (*Checksum, error)
 	// Gets(paths []*Path) ([]*File, error)
-	Set(path *Path, file *File) (*Checksum, error)
+	Write(path *Path, checksum *Checksum) (*Checksum, error)
 	// Sets(paths []*Path, files []*File) ([]*Checksum, error)
 }
 

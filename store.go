@@ -13,20 +13,7 @@ type Store interface {
 	Gets(ids []*Checksum) ([]Object, error)
 	Put(obj Object) (*Checksum, error)
 	Puts(objs []Object) ([]*Checksum, error)
-	File(id *Checksum) (*File, error)
 	Branch(id *Checksum) (*Branch, error)
-}
-
-func StoreGetFile(store Store, id *Checksum) (*File, error) {
-	obj, err := store.Get(id)
-	if err != nil {
-		return nil, err
-	}
-	file := obj.file()
-	if file == nil {
-		return nil, fmt.Errorf("object at location '%x' is not a file", id)
-	}
-	return file, nil
 }
 
 func StoreGetBranch(store Store, id *Checksum) (*Branch, error) {
@@ -34,8 +21,8 @@ func StoreGetBranch(store Store, id *Checksum) (*Branch, error) {
 	if err != nil {
 		return nil, err
 	}
-	branch := obj.branch()
-	if branch == nil {
+	branch, ok := obj.(*Branch)
+	if !ok {
 		return nil, fmt.Errorf("object at location '%x' is not a branch", id)
 	}
 	return branch, nil
@@ -65,10 +52,6 @@ func (s *InMemoryStore) Get(id *Checksum) (Object, error) {
 	}
 }
 
-func (s InMemoryStore) File(id *Checksum) (*File, error) {
-	return StoreGetFile(&s, id)
-}
-
 func (s InMemoryStore) Branch(id *Checksum) (*Branch, error) {
 	return StoreGetBranch(&s, id)
 }
@@ -86,7 +69,7 @@ func (s *InMemoryStore) Gets(ids []*Checksum) ([]Object, error) {
 }
 
 func (s *InMemoryStore) Put(obj Object) (*Checksum, error) {
-	id := obj.checksum()
+	id := obj.key()
 	s.mem[*id] = obj
 	return id, nil
 }
@@ -94,7 +77,7 @@ func (s *InMemoryStore) Put(obj Object) (*Checksum, error) {
 func (s *InMemoryStore) Puts(objs []Object) ([]*Checksum, error) {
 	ids := make([]*Checksum, len(objs))
 	for index, obj := range objs {
-		id := obj.checksum()
+		id := obj.key()
 		s.mem[*id] = obj
 		ids[index] = id
 	}

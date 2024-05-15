@@ -6,7 +6,7 @@ import (
 
 type Name struct {
 	raw string
-	encoded Checksum
+	encoded *Checksum
 	IsDir bool
 	IsRoot bool
 }
@@ -19,7 +19,7 @@ func NewPath(repr string) *Path {
 	for i, subpath := range parts {
 		p[i] = Name{}
 		p[i].raw = subpath
-		p[i].encoded = encodeString(repr)
+		p[i].encoded = EncodeString(repr)
 		p[i].IsRoot = i == 0
 		p[i].IsDir = i < len(parts)-1
 	}
@@ -31,7 +31,7 @@ func (p Path) fileName() *Name {
 }
 
 func (n Name) equals(other *Name) bool {
-	return n.encoded.equals(&other.encoded)
+	return n.encoded.equals(other.encoded)
 }
 
 func (n Name) index(index int) byte {
