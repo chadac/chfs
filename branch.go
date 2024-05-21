@@ -18,6 +18,7 @@ type BranchRef struct {
 	// !isDir & name != nil => points to file
 	// name == nil          => internal pointer inside same directory
 }
+// Branch is an object used to map escape keys
 type Branch [16]*BranchRef
 
 func EmptyBranch() *Branch {

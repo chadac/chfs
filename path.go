@@ -4,6 +4,8 @@ import (
 	"strings"
 )
 
+const NameSize = 32
+
 type Name struct {
 	raw string
 	encoded *Checksum
@@ -37,3 +39,16 @@ func (n Name) equals(other *Name) bool {
 func (n Name) index(index int) byte {
 	return n.encoded.index(index)
 }
+
+// type NameIndex struct {
+// 	n *Name
+// 	i byte
+// }
+// // Returns path representation
+// func PathsToTree(paths []*Path) (NameIndex, NameIndex)[] {
+// 	var edges := make((NameIndex, NameIndex)[], len(paths))
+// 	pathBuf
+// 	for i := 0; true; i++ {
+// 	}
+// 	return edges
+// }
