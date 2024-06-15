@@ -8,42 +8,45 @@ const NameSize = 32
 
 type Name struct {
 	raw string
-	encoded *Checksum
-	IsDir bool
-	IsRoot bool
+	encoded *string
 }
 
-type Path []Name
+func encodeName(raw string) *string {
+	return nil
+}
 
-func NewPath(repr string) *Path {
-	parts := strings.Split(repr, "/")
-	p := (Path)(make([]Name, len(parts)))
-	for i, subpath := range parts {
-		p[i] = Name{}
-		p[i].raw = subpath
-		p[i].encoded = EncodeString(repr)
-		p[i].IsRoot = i == 0
-		p[i].IsDir = i < len(parts)-1
+func NewName(raw string) *Name {
+	n := Name{raw,nil}
+	return &n
+}
+
+func (n Name) Index(index int) byte {
+	if n.encoded == nil {
+		n.encoded = encodeName(n.raw)
 	}
-	return &p
+	return (*n.encoded)[index]
 }
 
-func (p Path) fileName() *Name {
-	return &p[len(p)-1]
+type Path []*Name
+
+func NewPath(repr string) Path {
+	parts := strings.Split(repr, "/")
+	p := (Path)(make([]*Name, len(parts)))
+	for i, subpath := range parts {
+		p[i] = NewName(subpath)
+	}
+	return p
 }
 
-func (n Name) equals(other *Name) bool {
-	return n.encoded.equals(other.encoded)
-}
-
-func (n Name) index(index int) byte {
-	return n.encoded.index(index)
+func (p Path) Base() *Name {
+	return p[len(p)-1]
 }
 
 // type NameIndex struct {
 // 	n *Name
 // 	i byte
 // }
+
 // // Returns path representation
 // func PathsToTree(paths []*Path) (NameIndex, NameIndex)[] {
 // 	var edges := make((NameIndex, NameIndex)[], len(paths))

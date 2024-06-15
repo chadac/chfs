@@ -1,6 +1,6 @@
 package vfs
 
-type Root Checksum
-func (root Root) key() *Checksum {
-	return (*Checksum)(&root)
-}
+// type Root Checksum
+// func (root Root) key() *Checksum {
+// 	return (*Checksum)(&root)
+// }
