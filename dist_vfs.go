@@ -1,4 +1,4 @@
-package vfs
+package chfs
 
 // type DistVFS struct {
 // 	store Store

@@ -1,14 +1,15 @@
-package vfs
+package chfs
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 )
 
 const chkSize = 32
 type Checksum [32]byte
 
 // convert to a string where each character is an index. it's useful sometimes!
-func (c Checksum) ToString() string {
+func (c Checksum) Indices() string {
 	s := make([]byte, chkSize)
 	for i := 0; i < chkSize; i++ {
 		s[i] = c.index(i)
@@ -27,6 +28,10 @@ func (c Checksum) Equals(that *Checksum) bool {
 		}
 	}
 	return true
+}
+
+func (c Checksum) repr() string {
+	return hex.EncodeToString(c[:])
 }
 
 func EncodeChecksum(contents string) *Checksum {

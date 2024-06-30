@@ -1,10 +1,11 @@
-package vfs
+package chfs
 
 import (
+	"crypto/sha1"
 	"strings"
 )
 
-const NameSize = 32
+const NameSize = 40
 
 type Name struct {
 	raw string
@@ -12,7 +13,13 @@ type Name struct {
 }
 
 func encodeName(raw string) *string {
-	return nil
+	sum := sha1.Sum([]byte(raw))
+	x := make([]byte, NameSize)
+	for i := 0; i < NameSize; i++ {
+		x[i] = sum[i / 2] >> (4*((i+1) & 1)) & 15
+	}
+	repr := (string)(x[:])
+	return &repr
 }
 
 func NewName(raw string) *Name {
@@ -30,6 +37,10 @@ func (n Name) Index(index int) byte {
 type Path []*Name
 
 func NewPath(repr string) Path {
+	// remove leading forward slash
+	if repr[0] == '/' {
+		repr = repr[1:]
+	}
 	parts := strings.Split(repr, "/")
 	p := (Path)(make([]*Name, len(parts)))
 	for i, subpath := range parts {

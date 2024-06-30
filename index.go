@@ -1,10 +1,11 @@
-package vfs
+package chfs
 
 type Index struct {
-	name string
-	ref Checksum
+	path string
+	parent *Checksum
+	id Checksum
 }
 
-func (i Index) key() Checksum {
-	return i.ref
+func (i Index) Key() Checksum {
+	return i.id
 }

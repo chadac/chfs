@@ -1,4 +1,4 @@
-module github.com/chadac/vfs
+module github.com/chadac/chfs
 
 go 1.21.5
 

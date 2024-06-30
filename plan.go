@@ -1,9 +1,22 @@
-package vfs
+package chfs
 
 // import (
 // 	"fmt"
 // 	"sync"
 // )
+
+type PlanNode struct {
+	n PNode
+
+	// now describe our write actions
+	currentBranch *Branch
+	branch *Branch
+}
+
+type Plan struct {
+	pg PathGroup
+	root PlanNode
+}
 
 // type PlanRootNode struct {
 // 	branchKey *Checksum

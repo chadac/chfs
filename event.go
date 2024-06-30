@@ -1,4 +1,4 @@
-package vfs
+package chfs
 
 // // An event is a stateless and monotonic transform on a repository
 // type Event []FileEvent

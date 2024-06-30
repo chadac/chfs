@@ -1,4 +1,4 @@
-package vfs
+package chfs
 
 // import (
 // 	"testing"
