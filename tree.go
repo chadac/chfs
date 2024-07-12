@@ -8,18 +8,27 @@ import (
 const (
 	DirType = iota
 	FileType
-	SymlinkType
 )
 
 type Object struct {
 	// the encoded name... used because this is constant length
-	name string
+	name Name
 
 	objType byte
+
+	executable bool
+}
+
+func NewFile(name Name) Object {
+	return Object{name,FileType,false}
+}
+
+func NewDir(name Name) Object {
+	return Object{name,DirType,false}
 }
 
 func (o Object) Name() *string {
-	return &o.name
+	return o.name.encoded
 }
 
 func (o Object) Type() byte {
@@ -29,9 +38,12 @@ func (o Object) Type() byte {
 func (o Object) repr() string {
 	var sb strings.Builder
 	sb.WriteString(`"n":"`)
-	sb.WriteString(o.name)
+	sb.WriteString(o.name.Encoded())
 	sb.WriteString(`","t":`)
 	sb.WriteString(strconv.Itoa(int(o.objType)))
+	if o.executable {
+		sb.WriteString(`,"x":true`)
+	}
 	return sb.String()
 }
 
@@ -59,8 +71,16 @@ func (b Branch) repr() string {
 }
 
 // returns true if this points to a file/directory
-func (b Branch) Terminal() bool {
+func (b Branch) IsTerminal() bool {
 	return b.obj != nil
+}
+
+func (b Branch) IsDirectory() bool {
+	return b.IsTerminal() && b.obj.objType == DirType
+}
+
+func (b Branch) IsFile() bool {
+	return b.IsTerminal() && b.obj.objType == FileType
 }
 
 const TreeSize = 16
@@ -74,6 +94,42 @@ type Tree struct {
 func EmptyTree() *Tree {
 	t := new(Tree)
 	return t
+}
+
+func (t Tree) BranchCount() int {
+	branchCount := 0
+	for _, b := range t.b {
+		if b != nil {
+			branchCount++
+		}
+	}
+	return branchCount
+}
+
+func (t Tree) IsEmpty() bool {
+	for _, b := range t.b {
+		if b != nil {
+			return false
+		}
+	}
+	return true
+}
+
+func CopyTree(copy *Tree) *Tree {
+	t := new(Tree)
+	for i, b := range copy.b {
+		if b != nil {
+			t.b[i] = CopyBranch(b)
+		}
+	}
+	return t
+}
+
+func CopyBranch(copy *Branch) *Branch {
+	b := new(Branch)
+	b.id = copy.id
+	b.obj = copy.obj
+	return b
 }
 
 // we generate json representations of branches because that's easy

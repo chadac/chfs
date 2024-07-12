@@ -36,13 +36,13 @@ func (fs BasicChFS) Write(index string, files []FileObj) (Checksum, error) {
 		return Checksum{}, fmt.Errorf(`error: basic chfs only supports single file ops`)
 	}
 
-	file := files[0]
+	// file := files[0]
 
-	root, err := fs.GetRef(index)
-	if err != nil {
-		return Checksum{}, err
-	}
-	id := root.id
+	// root, err := fs.GetRef(index)
+	// if err != nil {
+	// 	return Checksum{}, err
+	// }
+	// id := root.id
 	return Checksum{}, nil
 }
 

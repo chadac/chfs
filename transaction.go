@@ -11,7 +11,7 @@ type CreateAction struct {
 type Transaction struct {
 	id int64
 	ref Ref
-	paths PathGroup
+	subtree SubTree
 }
 
 func (t *Transaction) Execute() error {

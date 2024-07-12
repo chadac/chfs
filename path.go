@@ -27,11 +27,15 @@ func NewName(raw string) *Name {
 	return &n
 }
 
-func (n Name) Index(index int) byte {
+func (n Name) Encoded() string {
 	if n.encoded == nil {
 		n.encoded = encodeName(n.raw)
 	}
-	return (*n.encoded)[index]
+	return *n.encoded
+}
+
+func (n Name) Index(index int) byte {
+	return n.Encoded()[index]
 }
 
 type Path []*Name
