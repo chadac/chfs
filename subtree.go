@@ -2,54 +2,93 @@ package chfs
 
 import (
 	"fmt"
-	"sync"
 )
 
-type PNode struct {
-	subtree *SubTree
-	parent *PNode
+// TODO: Swap pnode to use this
+type DirInfo[T any] struct {
+	root *PNode[T]
+	prevDir *PNode[T]
+	nextDir *PNode[T]
+	prevTail *PNode[T]
+}
 
-	paths []*Path
+type PNode[T any] struct {
+	subtree *SubTree[T]
+
+	dirPath Path
+	name *Name
 
 	pathIndex int
 	nameIndex int
 
 	char byte
-	terminal bool
 
-	prev *PNode
-	next []*PNode
+	prev *PNode[T]
+	next []*PNode[T]
 
-	// points to the tail of the previous directory
-	prevDir *PNode
+	// points to the root of the current directory
+	dir *PNode[T]
+	// points to the head of the previous directory (if it exists)
+	prevDir *PNode[T]
 	// points to the head of the next directory (if it exists)
-	nextDir **PNode
+	nextDir *PNode[T]
+	// points to the last node of the previous directory
+	prevTail *PNode[T]
+
+	extra T
+}
+
+func (n PNode[T]) String() string {
+	if n.IsRoot() {
+		return "{subtree:/[0]}"
+	} else {
+		return fmt.Sprintf("{subtree:%s/%s[%d].%d}", n.Dir(), n.Name(), n.nameIndex, n.char)
+	}
 }
 
 // a PathGroup is a tree representing the combined representations of
 // several paths
-type SubTree struct {
-	root *PNode
-	paths []*Path
-	leafs []*PNode
+type SubTree[T any] struct {
+	root *PNode[T]
+	paths []Path
+	leafs []*PNode[T]
+
+	newExtra func() T
 }
 
-func newPNode(subtree *SubTree, parent *PNode, char byte, pIndex int, nIndex int, prevDir *PNode, nextDir **PNode) *PNode {
-	n := PNode{}
-	n.subtree = subtree
-	n.parent = parent
-	n.char = char
-	n.paths = []*Path{}
-	n.pathIndex = pIndex
-	n.nameIndex = nIndex
-	n.terminal = false
-	n.prevDir = prevDir
-	n.nextDir = nextDir
-	return &n
+func NewSubTree[T any](paths []Path, newExtra func() T) *SubTree[T] {
+	t := SubTree[T]{}
+
+	t.newExtra = newExtra
+	t.paths = make([]Path, 0)
+	t.leafs = make([]*PNode[T], 0)
+
+	// init root node
+	root := PNode[T]{}
+	root.subtree = &t
+	root.pathIndex = 0
+	root.nameIndex = -1
+	root.next = make([]*PNode[T], 0)
+	root.extra = t.newExtra()
+	t.root = &root
+
+	for _, p := range paths {
+		t.AddPath(p)
+	}
+
+	return &t
 }
 
-// Generates the basic skeleton of a path.
-func (n *PNode) populate(wg *sync.WaitGroup) {
+func (t *SubTree[T]) AddPath(p Path) {
+	newNodes := t.root.addPath(p)
+	if newNodes != nil {
+		leaf := &newNodes[len(newNodes)-1]
+		t.leafs = append(t.leafs, leaf)
+		t.paths = append(t.paths, p)
+	}
+}
+
+func (n PNode[T]) nextIndices() (int, int) {
 	nextPathIndex := n.pathIndex
 	nextNameIndex := n.nameIndex + 1
 	if nextNameIndex == NameSize {
@@ -57,193 +96,168 @@ func (n *PNode) populate(wg *sync.WaitGroup) {
 		nextPathIndex += 1
 		nextNameIndex = 0
 	}
-
-	if nextPathIndex >= len(*n.paths[0]) {
-		// terminal node
-		n.next = nil
-		for _, p1 := range n.paths {
-			for i, p2 := range n.subtree.paths {
-				if p1 == p2 {
-					n.subtree.leafs[i] = n
-				}
-			}
-		}
-
-		if wg != nil {
-			wg.Done()
-		}
-		return
-	}
-
-	c1 := (*n.paths[0])[nextPathIndex].Index(nextNameIndex)
-
-	newPrevDir := n.prevDir
-	if n.nameIndex == 0 {
-		newPrevDir = n
-	}
-
-	newNextDir := n.nextDir
-	if n.nameIndex == 0 || newNextDir == nil {
-		*newNextDir = n
-		newNextDir = new(*PNode)
-	}
-
-	var next []*PNode
-	activeNext := 0
-
-	if len(n.paths) == 1 {
-		next = []*PNode{
-			newPNode(n.subtree, n, c1, nextPathIndex, nextNameIndex, newPrevDir, newNextDir),
-		}
-		activeNext++
-		next[0].paths = n.paths
-	} else if len(n.paths) > 1 {
-		split := false
-		for _, p := range n.paths {
-			if (*p)[nextPathIndex].Index(nextNameIndex) != c1 {
-				split = true
-				break
-			}
-		}
-		if split {
-			next = make([]*PNode, TreeSize)
-
-			for _, p := range n.paths {
-				c := (*p)[nextPathIndex].Index(nextNameIndex)
-
-				// initialization of next node
-				if next[c] == nil {
-					next[c] = newPNode(n.subtree, n, c, nextPathIndex, nextNameIndex, newPrevDir, new(*PNode))
-					activeNext++
-				}
-
-				next[c].paths = append(next[c].paths, p)
-			}
-		} else {
-			next = []*PNode{
-				newPNode(n.subtree, n, c1, nextPathIndex, nextNameIndex, newPrevDir, newNextDir),
-			}
-			activeNext++
-			next[0].paths = n.paths
-		}
-	}
-
-	n.next = next
-
-	for _, n2 := range next {
-		if n2 != nil {
-			if wg != nil {
-				go n2.populate(wg)
-			} else {
-				// paralellizing incurs too much overhead usually so... don't
-				n2.populate(wg)
-			}
-		}
-	}
+	return nextPathIndex, nextNameIndex
 }
 
-func NewSubTree(paths []Path, parallel bool) *SubTree {
-	newPaths := make([]*Path, len(paths))
-	for i, _ := range paths {
-		newPaths[i] = &paths[i]
+func (n *PNode[T]) addPath(p Path) []PNode[T] {
+	nextPathIndex, nextNameIndex := n.nextIndices()
+	if nextPathIndex >= len(p) {
+		// we apparently already added this path, so skip
+		return nil
 	}
 
-	g := SubTree{}
-	g.paths = newPaths
-	g.leafs = make([]*PNode, len(paths))
-
-	root := newPNode(&g, nil, 0, 0, -1, nil, new(*PNode))
-	root.paths = newPaths
-
-	var wg *sync.WaitGroup = nil
-	if parallel {
-		wg = &sync.WaitGroup{}
-		wg.Add(len(paths))
-	}
-	root.populate(wg)
-	if wg != nil {
-		wg.Wait()
+	pchar := p[nextPathIndex].Index(nextNameIndex)
+	for _, next := range n.next {
+		if pchar == next.char {
+			return next.addPath(p)
+		}
 	}
 
-	return &g
+	newNodes := n.createNodeChain(p, nextPathIndex, nextNameIndex)
+	n.next = append(n.next, &newNodes[0])
+	return newNodes
+}
+
+func (prev *PNode[T]) createNodeChain(p Path, pathIndex int, nameIndex int) []PNode[T] {
+	t := prev.subtree
+
+	// generates and links together a chain of nodes
+	numNodes := (len(p)-pathIndex-1)*NameSize + (NameSize-nameIndex)
+	nodes := make([]PNode[T], numNodes)
+
+	nodes[0].prev = prev
+	startIndex := pathIndex * NameSize + nameIndex
+	for i := 0; i < len(nodes); i++ {
+		n := &nodes[i]
+
+		n.subtree = t
+
+		// initialize extra values
+		extraValue := t.newExtra()
+		n.extra = extraValue
+
+		// set pathIndex, nameIndex appropriately
+		totalIndex := pathIndex * NameSize + nameIndex + i
+		n.pathIndex = totalIndex / NameSize
+		n.nameIndex = totalIndex % NameSize
+
+		n.char = p[n.pathIndex].Index(n.nameIndex)
+		n.dirPath = p[:n.pathIndex]
+		n.name = p[n.pathIndex]
+
+		dirIndex := n.pathIndex * NameSize - startIndex
+		if dirIndex >= 0 {
+			n.dir = &nodes[dirIndex]
+		} else if n.pathIndex == prev.pathIndex {
+			n.dir = prev.dir
+		} else {
+			panic("reached an unanticipated edge case! test better")
+		}
+
+		prevDirIndex := (n.pathIndex-1) * NameSize - startIndex
+		if prevDirIndex >= 0 {
+			n.prevDir = &nodes[prevDirIndex]
+		} else if n.pathIndex == prev.pathIndex {
+			// case 1: we share previous directories
+			n.prevDir = prev.prevDir
+		} else if n.pathIndex == prev.pathIndex+1 {
+			// case 2: we point to prev's root directory
+			n.prevDir = prev.dir
+		} else {
+			panic("reached an unanticipated edge case! test better")
+		}
+
+		prevTailIndex := prevDirIndex + NameSize - 1
+		if prevTailIndex >= 0 {
+			n.prevTail = &nodes[prevTailIndex]
+		} else if prevTailIndex == -1 {
+			n.prevTail = prev
+		} else if n.pathIndex == prev.pathIndex {
+			// same edge case as above
+			n.prevTail = prev.prevTail
+		} else {
+			panic("reached an unanticipated edge case! test better")
+		}
+
+		nextDirIndex := (n.pathIndex+1) * NameSize - startIndex
+		if nextDirIndex < len(nodes) {
+			n.nextDir = &nodes[nextDirIndex]
+		}
+
+		if i > 0 {
+			n.prev = &nodes[i-1]
+		} else {
+			n.prev = prev
+		}
+
+		if i < len(nodes)-1 {
+			n.next = []*PNode[T]{&nodes[i+1]}
+		} else {
+			// make it empty
+			n.next = []*PNode[T]{}
+		}
+	}
+	return nodes
 }
 
 // Returns the name of the parent directory (if it exists)
-func (n *PNode) DirName() *string {
-	if n.pathIndex <= 0 {
-		return nil
-	}
-	return (*n.paths[0])[n.pathIndex-1].encoded
+func (n PNode[T]) DirName() *Name {
+	return n.dirPath.Base()
 }
 
-// Returns the name of the current path (if it exists)
+func (n PNode[T]) Dir() Path {
+	return n.dirPath
+}
+
+// Returns the name of the current path (based on the first element)
 //
-// If this is non-unique this returns null.
-func (n *PNode) Name() *string {
-	if len(n.paths) > 1 {
-		return (*n.paths[0])[n.pathIndex].encoded
-	}
-	return nil
+// This is a "use at your own risk" sort of thing. It is possible, if you're
+// not careful, that you're getting a non-unique name. I still have to think
+// about what logic creates this, but the main thing is that generally this
+// should only be called later in the tree.
+func (n PNode[T]) Name() *Name {
+	return n.name
 }
 
-func (n PNode) IsRoot() bool {
+func (n PNode[T]) IsRoot() bool {
 	// The "root" of the subtree is the node that starts our
 	// subtree. Since it's the start, it has no associated character and
 	// thus is sort of special.
 	return n.pathIndex == 0 && n.nameIndex == -1
 }
 
-func (n PNode) IsLeaf() bool {
+func (n PNode[T]) IsLeaf() bool {
 	return len(n.next) == 0
 }
 
-func (n PNode) IsDir() bool {
+func (n PNode[T]) IsDir() bool {
 	return len(n.next) > 1 || n.NextDir() != nil
 }
 
-func (n PNode) IsFile() bool {
+func (n PNode[T]) IsFile() bool {
 	return !n.IsDir()
 }
 
-func (n PNode) IsRelativeRoot() bool {
+func (n PNode[T]) IsRelativeRoot() bool {
 	// return true if we're a node at the start of a new file/directory
 	return n.nameIndex == 0
 }
 
-func (n *PNode) PrevDir() *PNode {
+func (n *PNode[T]) PrevDir() *PNode[T] {
 	return n.prevDir
 }
 
-func (n *PNode) NextDir() *PNode {
-	return *n.nextDir
+func (n *PNode[T]) NextDir() *PNode[T] {
+	return n.nextDir
 }
 
-// func (p *PNode) Leafs() []*PNode {
-// 	if len(p.next) == 1 {
-// 		return p.next[0].Leafs()
-// 	} else {
-// 		leafs := make([]*PNode, len(p.paths))
-// 		i := 0
-// 		for _, next := range p.next {
-// 			if next != nil {
-// 				newLeafs := next.Leafs()
-// 				for j := 0; j < len(newLeafs); j++ {
-// 					leafs[i] = newLeafs[j]
-// 					i++
-// 				}
-// 			}
-// 		}
-// 		return leafs
-// 	}
-// }
-
-func (pg *SubTree) Leafs() []*PNode {
+func (pg *SubTree[T]) Leafs() []*PNode[T] {
 	return pg.leafs
 }
 
-func (n PNode) print() {
+func (n PNode[T]) print() {
 	if n.nameIndex >= 0 {
-		if len(n.parent.next) > 1 {
+		if len(n.prev.next) > 1 {
 			// this starts a split
 			fmt.Println()
 			for i := 0; i < (n.pathIndex * NameSize) + n.pathIndex + n.nameIndex - 1; i++ {
@@ -261,4 +275,8 @@ func (n PNode) print() {
 	if n.nameIndex == -1 {
 		fmt.Println()
 	}
+}
+
+func (n PNode[T]) ToPathObject() PathObject {
+	return PathObject{}
 }

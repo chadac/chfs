@@ -1,244 +1,263 @@
 package chfs
 
 import (
+	_ "fmt"
 	"sync"
 )
 
-type PlanNode struct {
-	plan *Plan
-	n *PNode
+type readData interface {
+	TreeId() chan *Checksum
+	CurrTree() *Tree
+	CurrFile() *Branch
 
-	// read attributes
+	sendTreeId(*Checksum)
+	setCurrTree(*Tree)
+	setCurrFile(*Branch)
+}
+
+type writeData interface {
+	readData
+
+	NewTree() *Tree
+	NewFile() *Branch
+
+	setNewTree(*Tree)
+	setNewFile(*Branch)
+}
+
+type Reader struct {
 	treeId chan *Checksum
 	currTree *Tree
-	currFile *File
+	currFile *Branch
+}
 
-	// stuff we write
+func NewReader() *Reader {
+	return &Reader{
+		make(chan *Checksum),
+		nil,
+		nil,
+	}
+}
+
+func (r Reader) TreeId() chan *Checksum { return r.treeId }
+func (r Reader) CurrTree() *Tree { return r.currTree }
+func (r Reader) CurrFile() *Branch { return r.currFile }
+func (r *Reader) sendTreeId(treeId *Checksum) { r.treeId <- treeId }
+func (r *Reader) setCurrTree(tree *Tree) { r.currTree = tree }
+func (r *Reader) setCurrFile(obj *Branch) { r.currFile = obj }
+
+type Writer struct {
+	treeId chan *Checksum
+	currTree *Tree
+	currFile *Branch
 	newTree *Tree
-	newFile *File
-
-	// mimic structural stuff
-	next []*PlanNode
-	prev *PlanNode
-	prevDir *PlanNode
-	nextDir *PlanNode
+	newFile *Branch
 }
 
-type Plan struct {
-	pg *SubTree
-	root *PlanNode
-	leafs []*PlanNode
-}
-
-func NewPlan(st *SubTree) *Plan {
-	plan := Plan{st,nil,make([]*PlanNode, len(st.leafs))}
-	root := newPlanNode(&plan, st.root)
-	var nextDir *PlanNode = nil
-	if root.n.NextDir() != nil {
-		nextDir = newPlanNode(&plan, root.n.NextDir())
-	}
-	root.init(nextDir)
-	return &plan
-}
-
-func newPlanNode(plan *Plan, n *PNode) *PlanNode {
-	pn := new(PlanNode)
-	pn.plan = plan
-	pn.n = n
-	pn.treeId = make(chan *Checksum)
-	pn.next = make([]*PlanNode, len(n.next))
-	return pn
-}
-
-func (pn *PlanNode) init(nextDir *PlanNode) {
-	pn.nextDir = nextDir
-	n := pn.n
-	for i, next := range n.next {
-		var pnext *PlanNode
-		if nextDir != nil && nextDir.n == next {
-			pnext = nextDir
-		} else {
-			pnext = newPlanNode(pn.plan, next)
-		}
-		pn.next[i] = pnext
-		pnext.prev = pn
-
-		if pn.prevDir != nil && pn.prevDir.n == next.prevDir {
-			pnext.prevDir = pn.prevDir
-		} else if next.prevDir != nil {
-			// this means we're swapping directories... reassign properly
-			pnext.prevDir = pn
-		}
-
-		if nextDir != nil && nextDir.n == next.NextDir() {
-			pnext.init(nextDir)
-		} else if next.NextDir() != nil {
-			newNextDir := newPlanNode(pn.plan, next.NextDir())
-			pnext.init(newNextDir)
-		} else {
-			pnext.init(nil)
-		}
+func NewWriter() *Writer {
+	return &Writer{
+		make(chan *Checksum),
+		nil,
+		nil,
+		nil,
+		nil,
 	}
 }
 
-func (p *Plan) Read(rootId Checksum, store Store[Checksum, Tree]) {
+func (w Writer) TreeId() chan *Checksum { return w.treeId }
+func (w Writer) CurrTree() *Tree { return w.currTree }
+func (w Writer) CurrFile() *Branch { return w.currFile }
+func (w Writer) NewTree() *Tree { return w.newTree }
+func (w Writer) NewFile() *Branch { return w.newFile }
+func (w *Writer) sendTreeId(treeId *Checksum) { w.treeId <- treeId }
+func (w *Writer) setCurrTree(tree *Tree) { w.currTree = tree }
+func (w *Writer) setNewTree(tree *Tree) { w.newTree = tree }
+func (w *Writer) setCurrFile(obj *Branch) { w.currFile = obj }
+func (w *Writer) setNewFile(obj *Branch) { w.newFile = obj }
+
+func ReadTree[T readData](st *SubTree[T], store TreeStore, rootId Checksum) {
 	wg := sync.WaitGroup{}
-	go p.root.read(store, &wg)
-	p.root.treeId <- &rootId
+	go readNode(st.root, store, &wg)
+	// fmt.Printf("%p\n\n", &st.root)
+	// fmt.Printf("%p\n\n", &st.root.extra)
+	st.root.extra.sendTreeId(&rootId)
 	wg.Wait()
 }
 
-func (pn *PlanNode) read(store Store[Checksum, Tree], wg *sync.WaitGroup) {
-	for _, nn := range pn.next {
-		go nn.read(store, wg)
+func readNode[T readData](n *PNode[T], store TreeStore, wg *sync.WaitGroup) {
+	for _, next := range n.next {
+		go readNode(next, store, wg)
 	}
 
 	go func() {
-		treeId := <-pn.treeId
+		treeId := <-n.extra.TreeId()
 		if treeId != nil {
 			// TODO: figure out read errors
 			tree, _ := store.Get(*treeId)
-			pn.currTree = &tree
-			for _, nn := range pn.next {
-				nn.readBranch(tree.b[nn.n.char])
+			n.extra.setCurrTree(tree)
+
+			for _, next := range n.next {
+				readNodeBranch(next, tree.b[next.char])
 			}
 		}
-		if pn.n.IsLeaf() {
+
+		if n.IsLeaf() {
 			wg.Add(1)
 		}
 	}()
 }
 
-func (pn *PlanNode) readBranch(branch *Branch) {
+func readNodeBranch[T readData](n *PNode[T], branch *Branch) {
 	if branch == nil {
-		pn.treeId <- nil
+		n.extra.sendTreeId(nil)
 	} else if branch.IsTerminal() {
-		if pn.nextDir == nil {
+		if n.nextDir == nil {
 			// this means that we're going to need to rewrite...
-			pn.treeId <- nil
+			n.extra.sendTreeId(nil)
 		} else {
-			nextDir := pn.nextDir
-			if *pn.n.Name() == branch.obj.name {
-				nextDir.treeId <- &branch.id
-				if nextDir != pn {
-					pn.treeId <- nil
+			nextDir := n.NextDir()
+			if n.Name().Encoded() == branch.obj.name.Encoded() {
+				nextDir.extra.sendTreeId(&branch.id)
+				if nextDir != n {
+					n.extra.sendTreeId(nil)
 				}
 			} else {
-				pn.treeId <- nil
+				n.extra.sendTreeId(nil)
 			}
 		}
 	} else if branch.IsFile() {
-		pn.currFile = &File{branch.id}
-		pn.treeId <- nil
+		n.extra.setCurrFile(branch)
+		n.extra.sendTreeId(nil)
 	} else {
 		// otherwise we just send the object down
-		pn.treeId <- &branch.id
+		n.extra.sendTreeId(&branch.id)
 	}
 }
 
-func (p *Plan) Update(files []File) {
-	for i, leaf := range p.leafs {
-		leaf.newFile = &files[i]
+func Plan[T writeData](t *SubTree[T], files []*Branch) {
+	for i, leaf := range t.leafs {
+		leaf.extra.setNewFile(files[i])
 	}
 
 	// generate the new tree
-	p.root.updateTree()
+	updateTree(t.root)
 }
 
-func (pn PlanNode) findNewFile() *File {
-	if len(pn.next) > 1 {
+func findNewFile[T writeData](n *PNode[T]) *Branch {
+	if n.extra.NewFile() != nil {
+		return n.extra.NewFile()
+	}
+	if len(n.next) != 1 {
 		return nil
 	}
-	return pn.next[0].findNewFile()
+	return findNewFile(n.next[0])
 }
 
-func (pn *PlanNode) updateTree() {
+func updateTree[T writeData](n *PNode[T]) {
 	// Using the read value, update the present tree to whatever the new
 	// thing we want is.
 
 	// TODO: This may need some options for update strategies.
 
 	var newTree *Tree = nil
-	if pn.currTree != nil {
+	if n.extra.CurrTree() != nil {
 		// simple case: if we're running on an existing tree, then we simply run on existing files
-		newTree = CopyTree(pn.currTree)
+		newTree = CopyTree(n.extra.CurrTree())
 	} else {
 		// otherwise we're generating a new tree
 		newTree = EmptyTree()
 	}
 
-	// now we populate our new tree with all the new branches
-	for _, next := range pn.next {
-		newTree.b[next.n.char] = next.createBranch()
+	// now let's count the number of branches we're going to traverse
+	totalBranches := newTree.BranchCount()
+	for _, next := range n.next {
+		if newTree.b[next.char] == nil {
+			totalBranches++
+		}
 	}
 
-	numBranches := newTree.BranchCount()
-
-	// consolidation: if our tree is empty, we'll delete it
-	if numBranches == 0 {
+	// consolidation: if our new tree is guaranteed to be simple, then don't make it
+	if !n.IsRoot() && !n.IsRelativeRoot() && totalBranches <= 1 {
+		// fmt.Printf("%s: not enough branches\n", n)
 		newTree = nil
+	} else {
+		// we need to split; therefore
+		for _, next := range n.next {
+			newTree.b[next.char] = createBranchFor(next)
+		}
+
+		numBranches := newTree.BranchCount()
+
+		if numBranches == 0 {
+			// consolidation: if our tree is empty, we'll delete it
+			// fmt.Printf("%s: not enough branches after creation\n", n)
+			newTree = nil
+		} else if !n.IsRoot() && !n.IsRelativeRoot() && numBranches <= 1 {
+			// consolidation: if our tree is non-relroot and has only one branch, consolidate
+			// fmt.Printf("%s: tree too small, consolidating\n", n)
+			newTree = nil
+		}
 	}
 
-	// consolidation: if our tree is non-relroot and has only one branch, consolidate
-	if !pn.n.IsRelativeRoot() && numBranches <= 1 {
-		newTree = nil
-	}
-
-	pn.newTree = newTree
+	// fmt.Printf("%s: new tree %p\n", n, newTree)
+	n.extra.setNewTree(newTree)
 }
 
-func (pn *PlanNode) createBranch() *Branch {
+func createBranchFor[T writeData](n *PNode[T]) *Branch {
 	// TODO: We may need to conditionalize this for partial tree updates
-	pn.updateTree()
+	updateTree(n)
 
 	// if we can consolidate, then just jump to the next tree
-	if pn.newTree == nil && pn.n.IsDir() {
+	if n.extra.NewTree() == nil && n.IsDir() {
 		// case 1: we don't need to create a new tree but there is a new
 		// directory
-		return pn.nextDir.createBranch()
-	} else if pn.newTree == nil { // && pn.n.IsFile()
+		return createBranchFor(n.NextDir())
+	} else if n.extra.NewTree() == nil { // && pn.n.IsFile()
 		// case 2: if the tree has been "consolidated" that means that we don't need
 		// to split anymore. get the file at the end of the rainbow and return it
-		pn.newFile = pn.findNewFile()
-		if pn.newFile == nil {
+		newFile := findNewFile(n)
+		n.extra.setNewFile(newFile)
+		if n.extra.NewFile() == nil {
 			// PANIC!
 		}
-		obj := NewFile(*pn.n.Name())
-		return &Branch{pn.newFile.Key(), &obj}
-	} else if pn.n.nameIndex == 0 {
+		// TODO: FIX
+		return newFile
+	} else if n.nameIndex == 0 {
 		// case three: (complement to case one) we're at the root of a new directory
-		obj := NewDir(*pn.n.Name())
-		return &Branch{pn.newTree.Key(),&obj}
+		obj := NewDir(*n.Name())
+		return &Branch{n.extra.NewTree().Key(),&obj}
 	} else {
 		// case four: regular case. we're pointing to the tree that this node represents
-		return &Branch{pn.newTree.Key(),nil}
+		return &Branch{n.extra.NewTree().Key(),nil}
 	}
 }
 
-func (p *Plan) Write(store Store[Checksum, Tree]) *Tree {
+func WriteTree[T writeData](t *SubTree[T], store Store[Checksum, Tree]) *Tree {
 	wg := sync.WaitGroup{}
-	p.root.write(&wg, store)
+	writeNode(t.root, &wg, store)
 	wg.Wait()
 
 	// return the new root tree
-	return p.root.newTree
+	return t.root.extra.NewTree()
 }
 
-func (pn *PlanNode) write(wg *sync.WaitGroup, store Store[Checksum, Tree]) {
-	if pn.currTree == nil {
-		if pn.nextDir != nil {
-			pn.nextDir.write(wg, store)
+func writeNode[T writeData](n *PNode[T], wg *sync.WaitGroup, store Store[Checksum, Tree]) {
+	if n.extra.CurrTree() == nil {
+		if n.NextDir() != nil {
+			writeNode(n.NextDir(), wg, store)
 		}
 		return
 	}
 	wg.Add(1)
-	for _, next := range pn.next {
-		next.write(wg, store)
+	for _, next := range n.next {
+		writeNode(next, wg, store)
 	}
+
+	// async write the tree to the store
 	go func() {
 		defer wg.Done()
-		if pn.currTree != nil {
-			store.Put(*pn.currTree)
+		if n.extra.NewTree() != nil {
+			store.Put(*n.extra.NewTree())
 		}
 	}()
 }

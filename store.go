@@ -8,10 +8,10 @@ type Value[K comparable] interface {
  * A key-value store that allows for bulk inserts/gets
  **/
 type Store[K comparable, V Value[K]] interface {
-	Get(key K) (V, error)
-	Gets(keys []K) []V
-	Put(value V) (K, error)
-	Puts(values []V) []K
+	Get(key K) (*V, error)
+	Gets(keys []K) ([]*V, error)
+	Put(value V) (*K, error)
+	Puts(values []V) ([]*K, error)
 }
 
 
@@ -29,25 +29,25 @@ type RefStore Store[string, Ref]
 
 
 // todo: make this parallel
-func listDir(store TreeStore, root Checksum, recursive bool) ([]*Branch, error) {
+func listDir(store TreeStore, root Checksum, prefix Path, recursive bool) ([]PathObject, error) {
 	tree, err := store.Get(root)
 	if err != nil {
 		return nil, err
 	}
 
 	// this is deterministic right now... let's preserve that behavior
-	result := make([]*Branch, 0)
+	result := make([]PathObject, 0)
 	for _, b := range tree.b {
 		if b == nil {
 			continue
 		}
 		doRecurse := true
 		if b.obj != nil {
-			result = append(result, b)
+			result = append(result, NewPathObject(prefix, b))
 			doRecurse = b.obj.objType == DirType && recursive
 		}
 		if doRecurse {
-			newItems, err := ListDir(store, b.id, recursive)
+			newItems, err := listDir(store, b.id, prefix.Append(b.obj.name), recursive)
 			if err != nil {
 				return nil, err
 			}
@@ -58,9 +58,6 @@ func listDir(store TreeStore, root Checksum, recursive bool) ([]*Branch, error) 
 	return result, nil
 }
 
-func ListDir(store TreeStore, root Checksum, recursive bool) ([]*Branch, error) {
-	return listDir(store, root, recursive)
-}
-
-func Read(store TreeStore, root Checksum, paths []Path) ([]*Branch, error) {
+func ListDir(store TreeStore, root Checksum, recursive bool) ([]PathObject, error) {
+	return listDir(store, root, NewPath("/"), recursive)
 }

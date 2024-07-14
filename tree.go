@@ -38,7 +38,7 @@ func (o Object) Type() byte {
 func (o Object) repr() string {
 	var sb strings.Builder
 	sb.WriteString(`"n":"`)
-	sb.WriteString(o.name.Encoded())
+	sb.WriteString(o.name.raw)
 	sb.WriteString(`","t":`)
 	sb.WriteString(strconv.Itoa(int(o.objType)))
 	if o.executable {
@@ -60,8 +60,9 @@ func (b Branch) Id() *Checksum {
 
 func (b Branch) repr() string {
 	var sb strings.Builder
-	sb.WriteString(`{"i": "`)
+	sb.WriteString(`{"i":"`)
 	sb.WriteString(b.id.repr())
+	sb.WriteString(`"`)
 	if b.obj != nil {
 		sb.WriteString(",")
 		sb.WriteString(b.obj.repr())
@@ -147,6 +148,7 @@ func (t Tree) repr() string {
 			sb.WriteString(",")
 		}
 	}
+	sb.WriteString("]")
 	return sb.String()
 }
 

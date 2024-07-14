@@ -1,10 +1,34 @@
 package chfs
 
-type FileObj struct {
-	path Path
+type PathObject struct {
+	directory Path
+	filename Name
+	fileId Checksum
 
-	file File
 	executable bool
+}
+
+func NewPathObject(directory Path, branch *Branch) PathObject {
+	return PathObject{
+		directory,
+		branch.obj.name,
+		branch.id,
+		branch.obj.executable,
+	}
+}
+
+func (p PathObject) Path() Path {
+	return p.directory.Append(p.filename)
+}
+
+func (p PathObject) Branch() *Branch {
+	file := NewFile(p.filename)
+	file.executable = p.executable
+	branch := Branch{
+		p.fileId,
+		&file,
+	}
+	return &branch
 }
 
 type ChFS interface {
@@ -25,14 +49,26 @@ type ChFS interface {
 
 	// An update is an atomic operation that changes the structure of a
 	// tree in multiple places simultaneously
-	Write(ref string, files []FileObj) (Checksum, error)
+	Write(ref string, files []PathObject) (Checksum, error)
 
 	// Read file(s)
-	Read(ref string, paths []Path) ([]FileObj, error)
+	Read(ref string, paths []Path) ([]PathObject, error)
 
 	// List a directory
-	ListDir(ref string, paths []Path, recursive bool) ([][]FileObj, error)
+	ListDir(ref string, paths []Path, recursive bool) ([][]PathObject, error)
 
 	// // Merge replays the changes from `source` onto the given `ref`
 	// Merge(ref string, source Index) (Index, error)
+}
+
+// Creates an empty tree
+func Init(ref RefStore, tree TreeStore) error {
+	root := EmptyTree()
+	id, err := tree.Put(*root)
+	if err != nil {
+		return err
+	}
+	rootRef := Ref{"HEAD",*id}
+	ref.Put(rootRef)
+	return nil
 }
