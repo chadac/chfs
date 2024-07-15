@@ -24,6 +24,7 @@ func TestRandomShit(t *testing.T) {
 	files := []PathObject{
 		newPathObject(NewPath("/root/"),*NewName("file1"),"Test File 1",false,),
 		newPathObject(NewPath("/root/"),*NewName("file2"),"Test File 2",false,),
+		newPathObject(NewPath("/root/"),*NewName("file3"),"Test File 3",false,),
 	}
 
 	fs.Write("HEAD", files)
