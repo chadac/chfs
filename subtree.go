@@ -255,6 +255,10 @@ func (pg *SubTree[T]) Leafs() []*PNode[T] {
 	return pg.leafs
 }
 
+func (t SubTree[T]) Print() {
+	t.root.print()
+}
+
 func (n PNode[T]) print() {
 	if n.nameIndex >= 0 {
 		if len(n.prev.next) > 1 {

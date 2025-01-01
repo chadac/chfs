@@ -1,7 +1,7 @@
 package chfs
 
 import (
-	_ "fmt"
+	"fmt"
 	"sync"
 )
 
@@ -181,7 +181,7 @@ func updateTree[T writeData](n *PNode[T]) {
 		// fmt.Printf("%s: not enough branches\n", n)
 		newTree = nil
 	} else {
-		// we need to split; therefore
+		// we need to split; therefore create new branches for all splits
 		for _, next := range n.next {
 			newTree.b[next.char] = createBranchFor(next)
 		}
@@ -242,22 +242,23 @@ func WriteTree[T writeData](t *SubTree[T], store Store[Checksum, Tree]) *Tree {
 }
 
 func writeNode[T writeData](n *PNode[T], wg *sync.WaitGroup, store Store[Checksum, Tree]) {
-	if n.extra.CurrTree() == nil {
+	if n.extra.NewTree() == nil {
 		if n.NextDir() != nil {
 			writeNode(n.NextDir(), wg, store)
 		}
 		return
 	}
-	wg.Add(1)
 	for _, next := range n.next {
 		writeNode(next, wg, store)
 	}
 
 	// async write the tree to the store
-	go func() {
-		defer wg.Done()
-		if n.extra.NewTree() != nil {
+	if n.extra.NewTree() != nil {
+		fmt.Printf("%s\n", n)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			store.Put(*n.extra.NewTree())
-		}
-	}()
+		}()
+	}
 }

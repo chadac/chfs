@@ -1,5 +1,8 @@
 package chfs
 
+import (
+)
+
 type Value[K comparable] interface {
 	Key() K
 }
@@ -41,11 +44,13 @@ func listDir(store TreeStore, root Checksum, prefix Path, recursive bool) ([]Pat
 		if b == nil {
 			continue
 		}
+		// fmt.Printf("%s %b\n", b.id.repr(), b.obj.objType)
 		doRecurse := true
 		if b.obj != nil {
 			result = append(result, NewPathObject(prefix, b))
 			doRecurse = b.obj.objType == DirType && recursive
 		}
+		// fmt.Println(doRecurse)
 		if doRecurse {
 			newItems, err := listDir(store, b.id, prefix.Append(b.obj.name), recursive)
 			if err != nil {

@@ -1,7 +1,7 @@
 package chfs
 
 import (
-	"fmt"
+	// "fmt"
 	"sync"
 )
 
@@ -64,9 +64,12 @@ func (fs *SimpleChFS) Write(refName string, actions []PathObject) (*Checksum, er
 	// TODO: make this fast!
 	ReadTree(subtree, fs.tree, ref.id)
 	Plan(subtree, branches)
+
+	subtree.Print()
+
 	newRoot := WriteTree(subtree, fs.tree)
 
-	fmt.Printf("%s\n", newRoot.repr())
+	// fmt.Printf("%s\n", newRoot.repr())
 	// update our tree root
 	fs.ref.Put(Ref{refName,newRoot.Key()})
 
@@ -94,14 +97,17 @@ func (fs SimpleChFS) Read(refName string, paths []Path) ([]PathObject, error) {
 }
 
 func (fs *SimpleChFS) ListDir(refName string, path Path) ([]PathObject, error) {
-	return []PathObject{}, nil
+	ref, err := fs.Head()
+	if err != nil {
+		return nil, err
+	}
+	files, err := ListDir(fs.tree, ref.id, true)
+	if err != nil {
+		return nil, err
+	}
+	return files, nil
 }
 
 func (fs *SimpleChFS) Tree() error {
-	// ref, err := fs.Head()
-	// if err != nil {
-	// 	return err
-	// }
-	// files := ListDir(fs.tree, ref.id, true)
 	return nil
 }
